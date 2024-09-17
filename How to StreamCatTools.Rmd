@@ -1,0 +1,155 @@
+---
+title: "Using StreamCatTools"
+author: "Dave Costello"
+date: "2024-09-13"
+output: html_document
+---
+
+## Goals
+
+This code describes how to access, download, and map spatial data for catchments and watersheds from in the continental US. The available data include \~600 total variables describing land cover from NHDPlus, data from the USEPA, and other data. Variables are described at the website linked below and in the `variable_info.csv` file. This code assumes you have accurate GPS coordinates for a site(s) and wish to delineate the watershed or catchment upstream of that location.
+
+**Catchment** Immediate area draining just into the stream segment at the GPS point of interest.
+
+**Watershed** All hydrologically connected catchments upstream of the point of interest, which accounts for the entire upstream area.
+
+Watershed ≥ Catchment
+
+*Resources*
+
+<https://www.epa.gov/national-aquatic-resource-surveys/streamcat-dataset>
+
+## Install package first time
+
+Only need to run this the first time. The `StreamCatTools` package is not on CRAN as of the drafting of this document. You need to install the `devtools` (from CRAN) so you can download and install the `StreamCatTools` package from GitHub.
+
+```{r install}
+install_cran('devtools')
+library(devtools)
+install_github('USEPA/StreamCatTools')
+```
+
+## Looking at data from one site
+
+The steps in the data accession process are:
+
+1.  Create a dataframe with lat/long (in decimal degrees) for you site(s) of interest
+
+2.  Find the COMID (catchment polygon ID) from NHDPlus
+
+3.  Pull the variables of interest from StreamCat using COMID
+
+```{r first pull, echo=FALSE}
+#Load required packages
+library(StreamCatTools)
+library(sf)
+
+#Enter the lat/long of the site you are interested in. Or use these coordinates (Mahoning at Jennings). Coordinates must be stored as a dataframe.
+site <- data.frame(x=-81.20298, #Longitude
+                   y=41.17274) #Latitude 
+
+#Pull COMID from NHDPlus database
+site_ID <- sc_get_comid(site, xcoord='x',ycoord='y', crsys=4269)
+
+#Access StreamCat data. This example pulls Deciduous forest cover % measured in 2019
+sc_get_data(metric='pctdecid2019', aoi='watershed', comid=site_ID)
+
+```
+
+## Pull data for multiple sites and variables
+
+The real power in this package comes when you want to extract multiple variables from StreamCat and do this for many sites. These instructions show how to pull multiple variables from 6 northeast Ohio streams in a few lines of code.
+
+### Build your list of variable names
+
+```{r}
+#Massive list of all the possible variables
+sc_get_params(param='name') #All variables names
+
+#Can also look at the full name for any varaible
+sc_fullname('cao') #Full names
+
+#First I make a vector of all the variables I want for each watershed
+ex_param <- c('cbnf','fert','manure','sw_flux','nani','nsurp', #Ag N additions
+              'pcturbop2019','pcturblo2019','pcturbmd2019','pcturbhi2019','rddens','pctimp2019', #Urban cover
+              'pctmxfst2019','pctdecid2019','pctconif2019', #Forest
+              'pctcrop2019','pcthay219') #Agriculture
+
+#This code checks to confirm that all parameters are legit with no typos
+ex_param[!ex_param %in% sc_get_params(param='name')] 
+```
+
+I left a mistake to show you how it works. It identified `pcthay219` as an invalid variable name. I am missing the zero from 2019. If you fix it above (line 75) and rerun this code it will return `character(0)` which means all is good.
+
+### Find all the COMIDs
+
+```{r}
+#Load in a csv with the coordinates
+NEOst <- read.csv(file="streamcat_sites.csv")
+
+#Find the COMIDs
+NEOstID <- sc_get_comid(NEOst, xcoord='Longitude',ycoord='Latitude', crsys=4269)
+
+#Add the COMID to the dataframe as a new column
+NEOst$COMID <- strsplit(NEOstID, ",")[[1]]
+
+#Save as a csv because sometimes the NHDPlus server doesn't work
+write.csv(NEOst,file="NEOst.csv",row.names=F) 
+```
+
+**HOT TIP**: The connection to the NHDPlus database can be finicky - I have found that it returns an error rather than a COMID often enough to be frustrating. Therefore, it is good practice to store the extracted COMIDs in a .csv so you can pull new StreamCat data without having to search for the COMIDs each time.
+
+### Extract all data and make dataframe
+```{r}
+#If you saved the COMIDs you can load the data and start here
+NEOst <- read.csv(file="NEOst.csv")
+
+#Get data from StreamCat
+NEO_sc <- sc_get_data(metric=paste(ex_param, collapse=", "), #Parameters must be single character string achieve with this paste code
+                      aoi='watershed', #Can change to 'catchment'
+                      comid=NEOst$COMID)
+
+#Merge with original dataset
+NEOcover <- merge(NEOst,NEO_sc,by="COMID")
+
+#Create composite land cover. Example here is total urban coverage by summing low, medium, high intensity, and open urban land.
+NEOcover$PCTURB <- NEOcover$PCTURBHI2019WS+NEOcover$PCTURBMD2019WS+
+  NEOcover$PCTURBLO2019WS+NEOcover$PCTURBOP2019WS
+
+
+```
+
+Note that the variable names are all capitalized in the resulting dataframe. Look at the `variable_info.csv` files for full descriptions, units, and citations for all variables.
+
+## Mapping sites
+There are many options for mapping watersheds in R using tools from NHDPlus. Here I am just showing you how to extract flowlines and watersheds and put them on a map.
+
+```{r}
+library(nhdplusTools)
+
+
+nldi_feature <- list(featureSource = "comid", 
+                     featureID = NEOcover$COMID[1])
+
+flowline_nldi <- navigate_nldi(nldi_feature, 
+                               mode = "upstreamTributaries", 
+                               distance_km = 1000)
+
+plot(sf::st_geometry(flowline), lwd = 3, col = "black")
+plot(sf::st_geometry(flowline_nldi$origin), lwd = 3, col = "red", add = TRUE)
+plot(sf::st_geometry(flowline_nldi$UT), lwd = 1, col = "red", add = TRUE)
+
+NEO_file <- tempfile(fileext = ".gpkg")
+subset <- subset_nhdplus(comids = NEOcover$COMID,
+                         output_file = NEO_file,
+                         nhdplus_data = "download", 
+                         flowline_only = FALSE,
+                         return_data = TRUE, overwrite = TRUE)
+
+flowline <- subset$NHDFlowline_Network
+catchment <- subset$CatchmentSP
+
+plot(sf::st_geometry(catchment))
+plot(sf::st_geometry(flowline), col = "blue",add=T)
+
+```
