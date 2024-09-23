@@ -3,11 +3,13 @@ title: "Using StreamCatTools"
 author: "Dave Costello"
 date: "2024-09-13"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ## Goals
 
-This code describes how to access, download, and map spatial data for catchments and watersheds from in the continental US. The available data include \~600 total variables describing land cover from NHDPlus, data from the USEPA, and other data. Variables are described at the website linked below and in the `variable_info.csv` file. This code assumes you have accurate GPS coordinates for a site(s) and wish to delineate the watershed or catchment upstream of that location.
+This code describes how to access, download, and map spatial data for catchments and watersheds in the continental US. The available data include \~600 total variables describing land cover from NHDPlus, data from the USEPA, and other data. Variables are described at the website linked below and in the `variable_info.csv` file. This code assumes you have accurate GPS coordinates for a site(s) and wish to delineate the watershed or catchment upstream of that location.
 
 **Catchment** Immediate area draining just into the stream segment at the GPS point of interest.
 
@@ -85,7 +87,8 @@ I left a mistake to show you how it works. It identified `pcthay219` as an inval
 
 ```{r}
 #Load in a csv with the coordinates
-NEOst <- read.csv(file="streamcat_sites.csv")
+#NEOst <- read.csv(file="streamcat_sites.csv")
+NEOst <- read.csv(file="~/github/streamcat-tutorial/streamcat_sites.csv")
 
 #Find the COMIDs
 NEOstID <- sc_get_comid(NEOst, xcoord='Longitude',ycoord='Latitude', crsys=4269)
@@ -94,7 +97,7 @@ NEOstID <- sc_get_comid(NEOst, xcoord='Longitude',ycoord='Latitude', crsys=4269)
 NEOst$COMID <- strsplit(NEOstID, ",")[[1]]
 
 #Save as a csv because sometimes the NHDPlus server doesn't work
-write.csv(NEOst,file="NEOst.csv",row.names=F) 
+write.csv(NEOst,file="~/github/streamcat-tutorial/NEOst.csv",row.names=F) 
 ```
 
 **HOT TIP**: The connection to the NHDPlus database can be finicky - I have found that it returns an error rather than a COMID often enough to be frustrating. Therefore, it is good practice to store the extracted COMIDs in a .csv so you can pull new StreamCat data without having to search for the COMIDs each time.
@@ -102,7 +105,7 @@ write.csv(NEOst,file="NEOst.csv",row.names=F)
 ### Extract all data and make dataframe
 ```{r}
 #If you saved the COMIDs you can load the data and start here
-NEOst <- read.csv(file="NEOst.csv")
+NEOst <- read.csv(file="~/github/streamcat-tutorial/NEOst.csv")
 
 #Get data from StreamCat
 NEO_sc <- sc_get_data(metric=paste(ex_param, collapse=", "), #Parameters must be single character string achieve with this paste code
@@ -127,7 +130,6 @@ There are many options for mapping watersheds in R using tools from NHDPlus. Her
 ```{r}
 library(nhdplusTools)
 
-
 nldi_feature <- list(featureSource = "comid", 
                      featureID = NEOcover$COMID[1])
 
@@ -148,8 +150,23 @@ subset <- subset_nhdplus(comids = NEOcover$COMID,
 
 flowline <- subset$NHDFlowline_Network
 catchment <- subset$CatchmentSP
+waterbody <- subset$NHDWaterbody
 
 plot(sf::st_geometry(catchment))
 plot(sf::st_geometry(flowline), col = "blue",add=T)
+plot(sf::st_geometry(flowline_nldi$UT), lwd = 1, col = "red", add = TRUE)
+for(pt in 1:nrow(NEOst)) {
+  plot(st_sfc(st_point(c(NEOst$Longitude[pt], NEOst$Latitude[pt])), crs = 4269), cex = 1, lwd = 2, col = "red", add = TRUE)
+}
+plot(sf::st_geometry(waterbody), col = rgb(0, 0, 1, alpha = 0.5), add = TRUE)
+
+for(i in 1:nrow(NEOcover)){
+  nldi_feature <- list(featureSource = "comid", 
+                     featureID = NEOcover$COMID[i])
+  plot_data <- plot_nhdplus(
+    outlets = list(featureSource = nldi_feature, featureID = NEOcover$COMID[i]), 
+    gpkg = NEO_file, overwrite = TRUE)
+  plot_data
+}
 
 ```
