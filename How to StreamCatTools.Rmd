@@ -128,58 +128,24 @@ Note that the variable names are all capitalized in the resulting dataframe. Loo
 There are many options for mapping watersheds in R using tools from NHDPlus. Here I am just showing you how to extract flowlines and watersheds and put them on a map.
 
 ```{r}
-library(nhdplusTools)
+library(scales) #Package for enhanced plotting
 
-nldi_feature <- list(featureSource = "comid", 
-                     featureID = NEOcover$COMID[1])
-
-flowline_nldi <- navigate_nldi(nldi_feature, 
-                               mode = "upstreamTributaries", 
-                               distance_km = 1000)
-
-plot(sf::st_geometry(flowline), lwd = 3, col = "black")
-plot(sf::st_geometry(flowline_nldi$origin), lwd = 3, col = "red", add = TRUE)
-plot(sf::st_geometry(flowline_nldi$UT), lwd = 1, col = "red", add = TRUE)
-
-NEO_file <- tempfile(fileext = ".gpkg")
-subset <- subset_nhdplus(comids = NEOcover$COMID,
-                         output_file = NEO_file,
-                         nhdplus_data = "download", 
-                         flowline_only = FALSE,
-                         return_data = TRUE, overwrite = TRUE)
-
-flowline <- subset$NHDFlowline_Network
-catchment <- subset$CatchmentSP
-waterbody <- subset$NHDWaterbody
-
-plot(sf::st_geometry(catchment))
-plot(sf::st_geometry(flowline), col = "blue",add=T)
-plot(sf::st_geometry(flowline_nldi$UT), lwd = 1, col = "red", add = TRUE)
-for(pt in 1:nrow(NEOst)) {
-  plot(st_sfc(st_point(c(NEOst$Longitude[pt], NEOst$Latitude[pt])), crs = 4269), cex = 1, lwd = 2, col = "red", add = TRUE)
-}
-plot(sf::st_geometry(waterbody), col = rgb(0, 0, 1, alpha = 0.5), add = TRUE)
-
-for(i in 1:nrow(NEOcover)){
-  nldi_feature <- list(featureSource = "comid", 
-                     featureID = NEOcover$COMID[i])
-  plot_data <- plot_nhdplus(
-    outlets = list(featureSource = nldi_feature, featureID = NEOcover$COMID[i]), 
-    gpkg = NEO_file, overwrite = TRUE)
-  plot_data
-}
-
-```
-
-```{r}
-library(scales)
-
+#Convert COMIDs to a list, which will be passed to the plotting function
 COMID_list <- list()
 for(id in 1:nrow(NEOcover)){
   COMID_list <- append(COMID_list, NEOcover$COMID[id])
 }
 
-plot_nhdplus(COMID_list, basemap = "CartoDB.Positron",
+#Boundary for base map
+bbox <- sf::st_bbox(c(xmin = -81.9, ymin = 41, xmax = -81.1, ymax = 41.8),
+                    crs = "+proj=longlat +datum=WGS84 +no_defs")
+
+#Produce base map with all streamlines
+plot_nhdplus(bbox=bbox,basemap="CartoDB.Positron",
+             plot_config = list(flowline = list(lwd = 0.2)))
+
+#Superimpose the study watersheds, flowlines, and sampling points
+plot_nhdplus(COMID_list, basemap = "CartoDB.Positron",add=T,
              plot_config = list(basin = list(lwd = 2, col = alpha("lightgray", 0.4)),
                                 flowline = list(lwd = 2, col = "dodgerblue4"),
                                 outlets = list(huc12pp = list(cex = 1.5),
