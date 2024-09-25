@@ -129,6 +129,7 @@ There are many options for mapping watersheds in R using tools from NHDPlus. Her
 
 ```{r}
 library(scales) #Package for enhanced plotting
+library(nhdplusTools)
 
 #Convert COMIDs to a list, which will be passed to the plotting function
 COMID_list <- list()
@@ -137,12 +138,12 @@ for(id in 1:nrow(NEOcover)){
 }
 
 #Boundary for base map
-bbox <- sf::st_bbox(c(xmin = -81.9, ymin = 41, xmax = -81.1, ymax = 41.8),
+bbox <- sf::st_bbox(c(xmin = -82, ymin = 41.2, xmax = -81.1, ymax = 41.6),
                     crs = "+proj=longlat +datum=WGS84 +no_defs")
 
 #Produce base map with all streamlines
-plot_nhdplus(bbox=bbox,basemap="CartoDB.Positron",
-             plot_config = list(flowline = list(lwd = 0.2)))
+plot_nhdplus(bbox=bbox,basemap="CartoDB.Positron", zoom = 10,
+             plot_config = list(flowline = list(lwd = 0.2, col= alpha("white", 1))))
 
 #Superimpose the study watersheds, flowlines, and sampling points
 plot_nhdplus(COMID_list, basemap = "CartoDB.Positron",add=T,
