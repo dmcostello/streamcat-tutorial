@@ -170,3 +170,18 @@ for(i in 1:nrow(NEOcover)){
 }
 
 ```
+
+```{r}
+library(scales)
+
+COMID_list <- list()
+for(id in 1:nrow(NEOcover)){
+  COMID_list <- append(COMID_list, NEOcover$COMID[id])
+}
+
+plot_nhdplus(COMID_list, basemap = "CartoDB.Positron",
+             plot_config = list(basin = list(lwd = 2, col = alpha("lightgray", 0.4)),
+                                flowline = list(lwd = 2, col = "dodgerblue4"),
+                                outlets = list(huc12pp = list(cex = 1.5),
+                                               comid = list(col = "tomato2"))))
+```
